@@ -21,14 +21,23 @@
 #warning Please use more recent kernel headers (>=2.6.38)
 #endif
 
-static int send_report(int fd, char *buf, size_t len) {
+static unsigned char scroll, flick, tap, haptic, volume;
+
+static int send_report(int fd, unsigned char *buf, size_t len) {
     int res = ioctl(fd, HIDIOCSFEATURE(len), buf);
     if (res < 0)
         perror("HIDIOCSFEATURE failed");
     return res;
 }
 
-static int get_report(int fd, char id, char *buf, size_t len) {
+static void pr_buffer(unsigned char *buf, int len) {
+    int i;
+    for (i = 0; i < len; i++)
+            printf("%hhx ", buf[i]);
+    puts("\n");
+}
+
+static int get_report(int fd, unsigned char id, unsigned char *buf, size_t len) {
     int i, res;
 
     buf[0] = id;
@@ -37,19 +46,17 @@ static int get_report(int fd, char id, char *buf, size_t len) {
         perror("HIDIOCGFEATURE failed");
     } else {
         printf("Report data (%d):\n\t", id);
-        for (i = 0; i < res; i++)
-            printf("%hhx ", buf[i]);
-        puts("\n");
+        pr_buffer(buf, res);
     }
     return res;
 }
 
 static int do_voodoo(int fd) {
     int i;
-    char recv_buf[256];
+    unsigned char recv_buf[256];
 
     static struct {
-        char buf[64];
+        unsigned char buf[64];
         size_t len;
     } reports[] = {
         {{18, 0x01}, 2},
@@ -72,7 +79,7 @@ static int do_voodoo(int fd) {
 }
 
 static int do_simple_voodoo(int fd) {
-    char buffer[27];
+    unsigned char buffer[27];
 
     get_report(fd, 0x22, buffer, sizeof(buffer));
     if (buffer[0] != 0x22 || buffer[1] != 0x14)
@@ -83,6 +90,59 @@ static int do_simple_voodoo(int fd) {
         buffer[4] = 0x6;
         send_report(fd, buffer, sizeof(buffer));
     }
+
+    return 0;
+}
+
+static int arc_touch_get_state(int fd) {
+    unsigned char buffer[27];
+
+    get_report(fd, 0x22, buffer, sizeof(buffer));
+    if (buffer[0] != 0x22 || buffer[1] != 0x81)
+        return 1;
+
+    scroll = !!(buffer[4] & 0x01);
+    flick  = !!(buffer[4] & 0x02);
+    tap    = !!(buffer[4] & 0x04);
+    haptic = !!(buffer[5] & 0x01);
+    volume = buffer[6] + 1;
+
+    printf("Current situation: scroll %s; flick %s; tap %s; haptic %s; volume: %d\n",
+        scroll ? "on" : "off",
+        flick  ? "on" : "off",
+        tap    ? "on" : "off",
+        haptic ? "on" : "off",
+        volume);
+
+    return 0;
+}
+
+static void arc_touch_create_report(unsigned char *buffer) {
+    buffer[0] = 0x22;
+    buffer[1] = 0x81;
+    buffer[2] = 0x01;
+    buffer[3] = 0x00;
+    buffer[4] = 0x18;
+
+    buffer[4] |= (!!scroll << 0);
+    buffer[4] |= (!!flick  << 1);
+    buffer[4] |= (!!tap    << 2);
+
+//    buffer[4] |= (1        << 3);
+    buffer[5] |= (!!haptic << 0);
+    buffer[5] |= 0x10;
+    buffer[6] = volume - 1;
+}
+
+static int arc_touch_send_voodoo(int fd) {
+    unsigned char buffer[27];
+
+    memset(buffer, 0, sizeof(buffer));
+
+    arc_touch_create_report(buffer);
+    printf("Will write:\n\t"); pr_buffer(buffer, sizeof(buffer));
+
+    send_report(fd, buffer, sizeof(buffer));
 
     return 0;
 }
@@ -102,7 +162,19 @@ int main(int argc, char* argv[]) {
     }
 
     //ret = do_voodoo(fd);
-    ret = do_simple_voodoo(fd);
+    //ret = do_simple_voodoo(fd);
+    ret = arc_touch_get_state(fd);
+    if (ret)
+        goto out;
+
+    haptic = 1;
+    volume = 5;
+
+    arc_touch_send_voodoo(fd);
+
+    arc_touch_get_state(fd);
+
+out:
     close(fd);
 
     return ret;
