@@ -33,7 +33,7 @@ static int send_report(int fd, unsigned char *buf, size_t len) {
 static void pr_buffer(unsigned char *buf, int len) {
     int i;
     for (i = 0; i < len; i++)
-            printf("%hhx ", buf[i]);
+            printf("%02hhx ", buf[i]);
     puts("\n");
 }
 
