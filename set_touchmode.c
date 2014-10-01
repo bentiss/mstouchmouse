@@ -21,7 +21,7 @@
 #warning Please use more recent kernel headers (>=2.6.38)
 #endif
 
-static unsigned char scroll, flick, tap, haptic, volume;
+static unsigned char scroll, flip_scroll, flick, tap, haptic, volume;
 static int bluetooth = 0;
 
 static int send_report(int fd, unsigned char *buf, size_t len) {
@@ -96,28 +96,31 @@ static int do_simple_voodoo(int fd) {
 }
 
 static void arc_touch_parse_state(char *buffer) {
-    scroll = !!(buffer[0] & 0x01);
-    flick  = !!(buffer[0] & 0x02);
-    tap    = !!(buffer[0] & 0x04);
-    haptic = !!(buffer[1] & 0x01);
-    volume = buffer[2] + 1;
+    scroll      = !!(buffer[0] & 0x01);
+    flick       = !!(buffer[0] & 0x02);
+    tap         = !!(buffer[0] & 0x04);
+    flip_scroll = !!(buffer[0] & 0x20);
+    haptic      = !!(buffer[1] & 0x01);
+    volume      = buffer[2] + 1;
 
-    printf("Current situation: scroll %s; flick %s; tap %s; haptic %s; volume: %d\n",
-        scroll ? "on" : "off",
-        flick  ? "on" : "off",
-        tap    ? "on" : "off",
-        haptic ? "on" : "off",
+    printf("Current situation: scroll %s; flip scroll: %s; flick %s; tap %s; haptic %s; volume: %d\n",
+        scroll      ? "on" : "off",
+        flip_scroll ? "on" : "off",
+        flick       ? "on" : "off",
+        tap         ? "on" : "off",
+        haptic      ? "on" : "off",
         volume);
 }
 
 static void arc_touch_fill_report(unsigned char *buffer) {
     buffer[0] = 0x18;
 
-    buffer[0] |= (!!scroll << 0);
-    buffer[0] |= (!!flick  << 1);
-    buffer[0] |= (!!tap    << 2);
+    buffer[0] |= (!!scroll      << 0);
+    buffer[0] |= (!!flick       << 1);
+    buffer[0] |= (!!tap         << 2);
+    buffer[0] |= (!!flip_scroll << 5);
 
-    buffer[1] |= (!!haptic << 0);
+    buffer[1] |= (!!haptic      << 0);
     buffer[2] = volume - 1;
 }
 
@@ -190,6 +193,10 @@ int main(int argc, char* argv[]) {
     if (ret)
         goto out;
 
+    scroll = 1;
+    flip_scroll = 0;
+    flick = 1;
+    tap = 1;
     haptic = 1;
     volume = 5;
 
