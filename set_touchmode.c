@@ -141,7 +141,7 @@ static int arc_touch_get_state(int fd) {
     return 0;
 }
 
-static void usb_arc_touch_create_report(unsigned char *buffer) {
+static size_t usb_arc_touch_create_report(unsigned char *buffer) {
     buffer[0] = 0x22;
     buffer[1] = 0x81;
     buffer[2] = 0x01;
@@ -150,25 +150,30 @@ static void usb_arc_touch_create_report(unsigned char *buffer) {
     buffer[5] = 0x10;
 
     arc_touch_fill_report(&buffer[4]);
+
+    return 27;
 }
 
-static void bt_arc_touch_create_report(unsigned char *buffer) {
+static size_t bt_arc_touch_create_report(unsigned char *buffer) {
     buffer[0] = 0x22;
     arc_touch_fill_report(&buffer[1]);
+
+    return 19;
 }
 
 static int arc_touch_send_voodoo(int fd) {
     unsigned char buffer[27];
+    size_t len;
 
     memset(buffer, 0, sizeof(buffer));
 
     if (!bluetooth)
-        usb_arc_touch_create_report(buffer);
+        len = usb_arc_touch_create_report(buffer);
     else
-        bt_arc_touch_create_report(buffer);
-    printf("Will write:\n\t"); pr_buffer(buffer, sizeof(buffer));
+        len = bt_arc_touch_create_report(buffer);
+    printf("Will write:\n\t"); pr_buffer(buffer, len);
 
-    send_report(fd, buffer, sizeof(buffer));
+    send_report(fd, buffer, len);
 
     return 0;
 }
