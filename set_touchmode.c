@@ -22,6 +22,7 @@
 #endif
 
 static unsigned char scroll, flick, tap, haptic, volume;
+static int bluetooth = 0;
 
 static int send_report(int fd, unsigned char *buf, size_t len) {
     int res = ioctl(fd, HIDIOCSFEATURE(len), buf);
@@ -94,18 +95,12 @@ static int do_simple_voodoo(int fd) {
     return 0;
 }
 
-static int arc_touch_get_state(int fd) {
-    unsigned char buffer[27];
-
-    get_report(fd, 0x22, buffer, sizeof(buffer));
-    if (buffer[0] != 0x22 || buffer[1] != 0x81)
-        return 1;
-
-    scroll = !!(buffer[4] & 0x01);
-    flick  = !!(buffer[4] & 0x02);
-    tap    = !!(buffer[4] & 0x04);
-    haptic = !!(buffer[5] & 0x01);
-    volume = buffer[6] + 1;
+static void arc_touch_parse_state(char *buffer) {
+    scroll = !!(buffer[0] & 0x01);
+    flick  = !!(buffer[0] & 0x02);
+    tap    = !!(buffer[0] & 0x04);
+    haptic = !!(buffer[1] & 0x01);
+    volume = buffer[2] + 1;
 
     printf("Current situation: scroll %s; flick %s; tap %s; haptic %s; volume: %d\n",
         scroll ? "on" : "off",
@@ -113,25 +108,50 @@ static int arc_touch_get_state(int fd) {
         tap    ? "on" : "off",
         haptic ? "on" : "off",
         volume);
+}
+
+static void arc_touch_fill_report(unsigned char *buffer) {
+    buffer[0] = 0x18;
+
+    buffer[0] |= (!!scroll << 0);
+    buffer[0] |= (!!flick  << 1);
+    buffer[0] |= (!!tap    << 2);
+
+    buffer[1] |= (!!haptic << 0);
+    buffer[2] = volume - 1;
+}
+
+static int arc_touch_get_state(int fd) {
+    unsigned char buffer[27];
+
+    get_report(fd, 0x22, buffer, sizeof(buffer));
+
+    if (buffer[0] != 0x22)
+        return 1;
+
+    bluetooth = buffer[1] != 0x81;
+    if (!bluetooth)
+        arc_touch_parse_state(&buffer[4]);
+    else
+        arc_touch_parse_state(&buffer[1]);
 
     return 0;
 }
 
-static void arc_touch_create_report(unsigned char *buffer) {
+static void usb_arc_touch_create_report(unsigned char *buffer) {
     buffer[0] = 0x22;
     buffer[1] = 0x81;
     buffer[2] = 0x01;
     buffer[3] = 0x00;
     buffer[4] = 0x18;
+    buffer[5] = 0x10;
 
-    buffer[4] |= (!!scroll << 0);
-    buffer[4] |= (!!flick  << 1);
-    buffer[4] |= (!!tap    << 2);
+    arc_touch_fill_report(&buffer[4]);
+}
 
-//    buffer[4] |= (1        << 3);
-    buffer[5] |= (!!haptic << 0);
-    buffer[5] |= 0x10;
-    buffer[6] = volume - 1;
+static void bt_arc_touch_create_report(unsigned char *buffer) {
+    buffer[0] = 0x22;
+    arc_touch_fill_report(&buffer[1]);
 }
 
 static int arc_touch_send_voodoo(int fd) {
@@ -139,7 +159,10 @@ static int arc_touch_send_voodoo(int fd) {
 
     memset(buffer, 0, sizeof(buffer));
 
-    arc_touch_create_report(buffer);
+    if (!bluetooth)
+        usb_arc_touch_create_report(buffer);
+    else
+        bt_arc_touch_create_report(buffer);
     printf("Will write:\n\t"); pr_buffer(buffer, sizeof(buffer));
 
     send_report(fd, buffer, sizeof(buffer));
