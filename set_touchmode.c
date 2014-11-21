@@ -48,6 +48,11 @@ static int get_report(int fd, unsigned char id, unsigned char *buf, size_t len) 
     } else {
         printf("Report data (%d):\n\t", id);
         pr_buffer(buf, res);
+        /* prepend report-ID if not sent by device */
+        if (res > 0 && buf[0] != id) {
+            memmove(buf + 1, buf, (res >= len) ? (res - 1) : res);
+            buf[0] = id;
+        }
     }
     return res;
 }
